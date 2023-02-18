@@ -35,8 +35,8 @@ mod unicodedata {
         builtins::PyStrRef, function::OptionalArg, PyObjectRef, PyPayload, PyRef, PyResult,
         VirtualMachine,
     };
+    use icu_properties::{maps::load_east_asian_width, EastAsianWidth};
     use itertools::Itertools;
-    use ucd::{Codepoint, EastAsianWidth};
     use unic_char_property::EnumeratedCharProperty;
     use unic_normal::StrNormalForm;
     use unic_ucd_age::{Age, UnicodeVersion, UNICODE_VERSION};
@@ -123,11 +123,13 @@ mod unicodedata {
 
         #[pymethod]
         fn east_asian_width(&self, character: PyStrRef, vm: &VirtualMachine) -> PyResult<String> {
-            Ok(self
-                .extract_char(character, vm)?
-                .map_or(EastAsianWidth::Neutral, |c| c.east_asian_width())
-                .abbr_name()
-                .to_owned())
+            if let Some(c) = self.extract_char(character, vm)? {
+                // TODO: Load data according to unic_version and reuse loaded data
+                if let Ok(eaw) = load_east_asian_width(&icu_testdata::unstable()) {
+                    return Ok(eaw.as_borrowed().get(c).abbr_name().to_owned());
+                }
+            }
+            Ok(EastAsianWidth::Neutral.abbr_name().to_owned())
         }
 
         #[pymethod]
@@ -156,18 +158,19 @@ mod unicodedata {
     }
 
     trait EastAsianWidthAbbrName {
-        fn abbr_name<'a>(&self) -> &'a str;
+        fn abbr_name<'a>(self) -> &'a str;
     }
 
     impl EastAsianWidthAbbrName for EastAsianWidth {
-        fn abbr_name<'a>(&self) -> &'a str {
+        fn abbr_name<'a>(self) -> &'a str {
             match self {
-                EastAsianWidth::Narrow => "Na",
-                EastAsianWidth::Wide => "W",
                 EastAsianWidth::Neutral => "N",
                 EastAsianWidth::Ambiguous => "A",
-                EastAsianWidth::FullWidth => "F",
-                EastAsianWidth::HalfWidth => "H",
+                EastAsianWidth::Halfwidth => "H",
+                EastAsianWidth::Fullwidth => "F",
+                EastAsianWidth::Narrow => "Na",
+                EastAsianWidth::Wide => "W",
+                _ => "N",
             }
         }
     }
